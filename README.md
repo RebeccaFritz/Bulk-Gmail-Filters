@@ -52,9 +52,11 @@ Edit the `filterFromEmail` array in `createBulkFilters()`. Each row follows this
 
 ```javascript
 const filterFromEmail = [
-  ['newsletters@example.com',  'Newsletters',       true,  false],
-  ['boss@mycompany.com',        'Work/Priority',     false, true],
-  ['noreply@github.com',        'GitHub',            true,  false],
+  // [from, labelName, skipInbox, markImportant]
+  ['updates@newsletter.com',   'Newsletters',          true,  false],
+  ['noreply@social.com',       'Social',               true,  false],
+  ['alerts@work.com',          'Work/Alerts',          true,  true ],
+  ['invoices@billing.com',     'Finance',              false, true ],
 ];
 ```
 
