@@ -1,43 +1,47 @@
-const userId = "me";
+let filterCriteria = [];
 
-function createBulkFilters() {
+function createCriteriaArray() {
 
-  const filterFromEmail = [
-    // [from, labelName, skipInbox, markImportant]
-    ['updates@newsletter.com',   'Newsletters',          true,  false],
-    ['noreply@social.com',       'Social',               true,  false],
-    ['alerts@work.com',          'Work/Alerts',          true,  true ],
-    ['invoices@billing.com',     'Finance',              false, true ],
-  ];
+  for (const [emails, label, skipInbox, markImportant] of emailTypes) {
+    let cur = createCriteriaForType(emails, label, skipInbox, markImportant);
+    filterCriteria = filterCriteria.concat(cur);
+  }
 
-  for (const [from, labelName, skipInbox, markImportant] of filterFromEmail) {
-    const labelId = getOrCreateLabel(labelName);
+  return;
+}
 
-    if (processExistingFilters(from, labelId, skipInbox, markImportant)) {
-      console.log(`⏭️ Skipping ${from} — filter already exists with same criteria`);
-      continue; // skip to the next row
-    }
 
-    const action = {
-      addLabelIds: [labelId]
-    };
+function createCriteriaForType(emails, label, skipInbox, markImportant) {
+  let result = [];
+  for (const email of emails) {
+    let cur = [email, label, skipInbox, markImportant];
+    result.push(cur);
+  }
+  return result;
+}
 
-    if (skipInbox)     action.removeLabelIds = ["INBOX"];
-    if (markImportant) action.addLabelIds.push("IMPORTANT");
+function createRulesArray() {
+  let rules = [];
+  for (const [emails, label, skipInbox, markImportant] of emailTypes) {
+    let queries = emails.map(convertEmailToQuery);
+    let cur = createRulesForType(emails, label, skipInbox, markImportant);
+    rules = rules.concat(cur);
+  }
+  return rules;
+}
 
-    try {
-      Gmail.Users.Settings.Filters.create(
-        { criteria: { from }, action },
-        userId
-      );
-      console.log(`✅ ${from} → "${labelName}"`);
-    } catch (e) {
-      console.error(`❌ ${from}: ${e.message}`);
-    }
+function convertEmailToQuery(email) {
+  // convert 'info@company.com' to 'from:info@company.com', 
+  return 'from:' + email; 
+}
 
-  } 
-}   
-
+function createRulesForType(emails, label, skipInbox, markImportant) {
+  let result = []
+  for (const email of emails) {
+    result.push([email, label, skipInbox, markImportant]);
+  }
+  return result;
+}
 
 function getOrCreateLabel(labelName) {
   const response = Gmail.Users.Labels.list(userId);
