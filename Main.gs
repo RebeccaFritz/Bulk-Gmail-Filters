@@ -1,3 +1,8 @@
+/**
+ * Creates Gmail filters for all senders defined in Config.gs.
+ * Safe to run multiple times — existing filters with matching criteria
+ * are skipped, and outdated ones are replaced.
+ */
 function createBulkFilters() {
 
   createCriteriaArray();
@@ -30,6 +35,11 @@ function createBulkFilters() {
   } 
 }   
 
+/**
+ * Applies labels and archives existing threads that arrived before
+ * the filters were created. Run once after createBulkFilters() to
+ * backfill your inbox.
+ */
 function applyLabelsToExistingEmails() {
   const rules = createRulesArray();
 
@@ -51,4 +61,14 @@ function applyLabelsToExistingEmails() {
 
     console.log(`✅ Applied "${labelName}" to ${threads.length} threads for ${query}`);
   }
+}
+
+/**
+ * Runs createBulkFilters() and applyLabelsToExistingEmails() in
+ * succession. Use this as the single entry point to fully sync
+ * your filters and inbox in one step.
+ */
+function syncFilters() {
+  createBulkFilters();
+  applyLabelsToExistingEmails();
 }

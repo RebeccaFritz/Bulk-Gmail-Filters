@@ -11,7 +11,7 @@ A Google Apps Script that creates and manages Gmail filters in bulk — applying
 - **Skips duplicates** — if an identical filter already exists, it won't create another
 - **Replaces outdated filters** — if a filter exists for the same sender but with different settings, it deletes the old one and creates the updated one
 - **Cleans up duplicates** — removes multiple conflicting filters for the same sender, keeping only the correct one
-- **Backfills existing emails** — applies labels and archives threads that arrived before the filters were created
+- **Backfills existing emails** — applies labels to emails that arrived before the filters were created
 
 ---
 
@@ -34,7 +34,7 @@ Create three script files and paste in the contents of each:
 | `Main.gs` | The two entry point functions you run |
 
 ### 4. Run it
-- Select `createBulkFilters` from the function dropdown
+- In `Main.gs`, select `syncFilters()`, `createBulkFilters()`, or `applyLabelsToExistingEmails()` from the function dropdown
 - Click **Run**
 - Authorize the script when prompted
 
@@ -69,14 +69,16 @@ const LABEL = {
 
 **Step 2** — add the email list and a row in `emailTypes`:
 ```javascript
-const emailTypes = [
-  ...
-  [socialEmails, LABEL.SOCIAL, true, false],  // 👈 [emails, label, skipInbox, markImportant]
-];
-
 const socialEmails = [   // 👈
   'noreply@twitter.com',
   'notifications@facebook.com',
+];
+
+...
+
+const emailTypes = [
+  ...
+  [socialEmails, LABEL.SOCIAL, true, false],  // 👈 [emails, label, skipInbox, markImportant]
 ];
 ```
 
@@ -101,7 +103,7 @@ Each row in `emailTypes` follows this format:
 
 ## Running the Script
 
-There are two functions you can run from the Apps Script editor:
+There are three functions you can run from the Apps Script editor:
 
 ### `createBulkFilters()`
 Creates Gmail filters for all senders in `Config.gs`. Safe to run multiple times — existing filters with matching criteria are skipped, and outdated ones are replaced.
@@ -110,6 +112,9 @@ Creates Gmail filters for all senders in `Config.gs`. Safe to run multiple times
 Applies labels and archives existing threads that arrived before the filters were created. Run this once after `createBulkFilters()` to backfill your inbox. This will not apply the 'IMPORTANT' label to existing emails.
 
 > **Note:** Run `createBulkFilters()` first so the labels exist before trying to apply them.
+
+### 'syncFilters()'
+Runs createBulkFilters() and applyLabelsToExistingEmails() in succession. Use this as the single entry point to fully sync your filters and inbox in one step.
 
 ---
 
@@ -131,7 +136,7 @@ Utility functions used by `Main.gs`. Reads from `emailTypes` in `Config.gs` auto
 - `createRulesArray()` — builds the flat rules list used by `applyLabelsToExistingEmails()`
 
 ### `Main.gs`
-The two entry points — `createBulkFilters()` and `applyLabelsToExistingEmails()`.
+The three entry points — `createBulkFilters()`, `applyLabelsToExistingEmails()`, and `syncFilters()`.
 
 ---
 
