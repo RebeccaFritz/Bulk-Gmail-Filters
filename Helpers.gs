@@ -1,142 +1,139 @@
-let filterCriteria = [];
+// ─── PropertiesService Cache ──────────────────────────────────────────────────
+
+const props = PropertiesService.getScriptProperties();
 
 /**
- * Iterates over all email types defined in emailTypes (Config.gs) and
- * populates the global filterCriteria array with one row per sender.
- * Called by createBulkFilters() before the filter creation loop.
+ * Returns the cached label ID for a given label name, or null if not cached.
+ * @param {string} labelName
+ * @returns {string|null}
  */
-function createCriteriaArray() {
-
-  for (const [emails, label, skipInbox, markImportant] of emailTypes) {
-    let cur = createCriteriaForType(emails, label, skipInbox, markImportant);
-    filterCriteria = filterCriteria.concat(cur);
-  }
-
-  return;
+function getCachedLabelId(labelName) {
+  return props.getProperty(`label:${labelName}`) || null;
 }
 
 /**
- * Converts a list of email addresses into an array of filter criteria rows,
- * each formatted as [email, label, skipInbox, markImportant].
- *
- * @param {string[]} emails - List of sender email addresses.
- * @param {string} label - The label name to apply.
- * @param {boolean} skipInbox - Whether to archive the email.
- * @param {boolean} markImportant - Whether to mark the email as important.
- * @returns {Array[]} Array of filter criteria rows.
+ * Stores a label name → ID mapping in the cache.
+ * @param {string} labelName
+ * @param {string} labelId
  */
-function createCriteriaForType(emails, label, skipInbox, markImportant) {
-  let result = [];
-  for (const email of emails) {
-    let cur = [email, label, skipInbox, markImportant];
-    result.push(cur);
-  }
-  return result;
+function cacheLabelId(labelName, labelId) {
+  props.setProperty(`label:${labelName}`, labelId);
 }
 
 /**
- * Builds and returns a flat array of rules used by applyLabelsToExistingEmails().
- * Each rule is formatted as [query, label, skipInbox, markImportant], where
- * query is a Gmail search string (e.g. 'from:someone@example.com').
- *
- * @returns {Array[]} Flat array of rule rows, one per sender.
+ * Returns the cached filter data for a given sender, or null if not cached.
+ * @param {string} from
+ * @returns {{ labelId: string, skipInbox: boolean, markImportant: boolean }|null}
  */
-function createRulesArray() {
-  let rules = [];
-  for (const [emails, label, skipInbox, markImportant] of emailTypes) {
-    let queries = emails.map(convertEmailToQuery);
-    let cur = createRulesForType(emails, label, skipInbox, markImportant);
-    rules = rules.concat(cur);
-  }
-  return rules;
+function getCachedFilter(from) {
+  const raw = props.getProperty(`filter:${from}`);
+  return raw ? JSON.parse(raw) : null;
 }
 
 /**
- * Converts a plain email address into a Gmail search query string.
- * Example: 'info@company.com' → 'from:info@company.com'
- *
- * @param {string} email - The sender email address to convert.
- * @returns {string} A Gmail search query string.
+ * Stores filter criteria for a sender in the cache.
+ * @param {string} from
+ * @param {string} labelId
+ * @param {boolean} skipInbox
+ * @param {boolean} markImportant
  */
-function convertEmailToQuery(email) {
-  return 'from:' + email; 
+function cacheFilter(from, labelId, skipInbox, markImportant) {
+  props.setProperty(`filter:${from}`, JSON.stringify({ labelId, skipInbox, markImportant }));
 }
 
 /**
- * Converts a list of Gmail search queries into an array of rule rows,
- * each formatted as [query, label, skipInbox, markImportant].
- *
- * @param {string[]} emails - List of Gmail search query strings.
- * @param {string} label - The label name to apply.
- * @param {boolean} skipInbox - Whether to archive the email.
- * @param {boolean} markImportant - Whether to mark the email as important.
- * @returns {Array[]} Array of rule rows.
+ * Removes a filter entry from the cache (used when criteria change).
+ * @param {string} from
  */
-function createRulesForType(emails, label, skipInbox, markImportant) {
-  let result = []
-  for (const email of emails) {
-    result.push([email, label, skipInbox, markImportant]);
-  }
-  return result;
+function evictFilterCache(from) {
+  props.deleteProperty(`filter:${from}`);
 }
+
+// ─── Gmail Label Helpers ──────────────────────────────────────────────────────
+
+const userId = 'me';
 
 /**
  * Returns the ID of a Gmail label by name, creating it if it doesn't exist.
+ * Checks PropertiesService cache before querying Gmail.
  *
- * @param {string} labelName - The display name of the label.
- * @returns {string} The Gmail label ID.
+ * @param {string} labelName
+ * @returns {string} Gmail label ID
  */
 function getOrCreateLabel(labelName) {
-  const response = Gmail.Users.Labels.list(userId);
-  const existingLabels = (response && response.labels) ? response.labels : [];
+  const cached = getCachedLabelId(labelName);
+  if (cached) {
+    console.log(`  Label "${labelName}" found in cache (ID: ${cached})`);
+    return cached;
+  }
 
-  const found = existingLabels.find(l => l.name === labelName);
+  const response      = Gmail.Users.Labels.list(userId);
+  const existingLabels = (response && response.labels) ? response.labels : [];
+  const found         = existingLabels.find(l => l.name === labelName);
+
   if (found) {
     console.log(`  Label "${labelName}" already exists (ID: ${found.id})`);
+    cacheLabelId(labelName, found.id);
     return found.id;
   }
 
   const newLabel = Gmail.Users.Labels.create(
-    { name: labelName, labelListVisibility: "labelShow", messageListVisibility: "show" },
+    { name: labelName, labelListVisibility: 'labelShow', messageListVisibility: 'show' },
     userId
   );
-  console.log(`  Created new label "${labelName}" (ID: ${newLabel.id})`);
+  console.log(`  Created label "${labelName}" (ID: ${newLabel.id})`);
+  cacheLabelId(labelName, newLabel.id);
   return newLabel.id;
 }
 
+// ─── Gmail Filter Helpers ─────────────────────────────────────────────────────
+
 /**
- * Checks all existing Gmail filters for the given sender address.
- * Keeps the first filter that exactly matches the desired criteria,
- * and deletes all others. Returns true if an exact match was found
- * so the caller can skip creating a duplicate.
+ * Checks existing Gmail filters for a sender. Cache-first.
+ * Keeps the first exact match; deletes all others.
+ * Returns true if an exact match was found (caller should skip creating a duplicate).
  *
- * @param {string} from - The sender email address to check.
- * @param {string} labelId - The Gmail label ID the filter should apply.
- * @param {boolean} skipInbox - Whether the filter should archive the email.
- * @param {boolean} markImportant - Whether the filter should mark as important.
- * @returns {boolean} True if an exact matching filter already exists.
+ * @param {string}  from
+ * @param {string}  labelId
+ * @param {boolean} skipInbox
+ * @param {boolean} markImportant
+ * @returns {boolean}
  */
 function processExistingFilters(from, labelId, skipInbox, markImportant) {
-  const response = Gmail.Users.Settings.Filters.list(userId);
-  const existingFilters = (response && response.filter) ? response.filter : [];
+  // 1. Cache fast-path
+  const cached = getCachedFilter(from);
+  if (cached) {
+    const exactMatch =
+      cached.labelId       === labelId       &&
+      cached.skipInbox     === skipInbox     &&
+      cached.markImportant === markImportant;
 
-  const matches = existingFilters.filter(f => f.criteria && f.criteria.from === from);
-
-  if (matches.length === 0) {
-    console.log(`  No existing filters found for ${from}`);
-    return;
+    if (exactMatch) {
+      console.log(`  Cache hit: filter for ${from} already matches`);
+      return true;
+    }
+    console.log(`  Cache mismatch for ${from} — querying Gmail`);
+    evictFilterCache(from);
   }
 
-  // loop through every match
+  // 2. Query Gmail
+  const response      = Gmail.Users.Settings.Filters.list(userId);
+  const existingFilters = (response && response.filter) ? response.filter : [];
+  const matches       = existingFilters.filter(f => f.criteria && f.criteria.from === from);
+
+  if (matches.length === 0) {
+    console.log(`  No existing filters for ${from}`);
+    return false;
+  }
+
   let foundExactMatch = false;
   for (const match of matches) {
-    if (!foundExactMatch && isDesiredFilter(match, labelId, skipInbox, markImportant)) { 
-      // keep the first exact match 
+    if (!foundExactMatch && isDesiredFilter(match, labelId, skipInbox, markImportant)) {
       foundExactMatch = true;
+      cacheFilter(from, labelId, skipInbox, markImportant);
     } else {
-      // delete all other matches (exact or partial)
       Gmail.Users.Settings.Filters.remove(userId, match.id);
-      console.log(`  🗑️ Deleted existing filter for ${from} (ID: ${match.id})`);
+      console.log(`  🗑️ Deleted stale filter for ${from} (ID: ${match.id})`);
     }
   }
 
@@ -144,27 +141,35 @@ function processExistingFilters(from, labelId, skipInbox, markImportant) {
 }
 
 /**
- * Checks whether a single existing filter exactly matches the desired criteria.
- * Returns true only if the label, skipInbox, and markImportant settings all match.
+ * Returns true if an existing Gmail filter object matches all desired criteria.
  *
- * @param {Object} match - An existing Gmail filter object from the API.
- * @param {string} labelId - The Gmail label ID the filter should apply.
- * @param {boolean} skipInbox - Whether the filter should archive the email.
- * @param {boolean} markImportant - Whether the filter should mark as important.
- * @returns {boolean} True if the filter matches all desired criteria.
+ * @param {Object}  match
+ * @param {string}  labelId
+ * @param {boolean} skipInbox
+ * @param {boolean} markImportant
+ * @returns {boolean}
  */
 function isDesiredFilter(match, labelId, skipInbox, markImportant) {
-
   const addIds    = match.action.addLabelIds    || [];
   const removeIds = match.action.removeLabelIds || [];
 
-  const hasLabel       = addIds.includes(labelId);
-  const hasImportant   = addIds.includes("IMPORTANT");
-  const hasSkipInbox   = removeIds.includes("INBOX");
-
   return (
-    hasLabel                     === true          &&
-    hasImportant                 === markImportant &&
-    hasSkipInbox                 === skipInbox
+    addIds.includes(labelId)        === true          &&
+    addIds.includes('IMPORTANT')    === markImportant &&
+    removeIds.includes('INBOX')     === skipInbox
   );
+}
+
+// ─── Shared Utilities ─────────────────────────────────────────────────────────
+
+/**
+ * Parses a string as a boolean. 'true' (case-insensitive) → true, else defaultValue.
+ * @param {string|boolean|undefined} val
+ * @param {boolean} defaultValue
+ * @returns {boolean}
+ */
+function parseBool(val, defaultValue) {
+  if (val === undefined || val === null || val === '') return defaultValue;
+  if (typeof val === 'boolean') return val;
+  return String(val).toLowerCase() === 'true';
 }
