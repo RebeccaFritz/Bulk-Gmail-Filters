@@ -16,12 +16,12 @@ function doGet() {
  * Parses textarea input, creates Gmail labels and filters, writes rows to the
  * sheet, and returns a result array for the page to display.
  *
- * Each non-blank, non-comment line:
- *   email@example.com, Label Name                          → skipInbox=false, markImportant=false
- *   email@example.com, Label Name, skipInbox, markImportant
+ * Accepts both formats per line:
+ *   boss@work.com, Label, true, false
+ *   from:boss@work.com, label:Work, skipInbox:true, hasAttachment:true
  *
  * @param {string} rawInput
- * @returns {{ email: string, label: string, status: string, message: string }[]}
+ * @returns {{ criteriaStr: string, actionsStr: string, status: string, message: string }[]}
  */
 function addFiltersFromUI(rawInput) {
   const lines = rawInput
@@ -32,26 +32,31 @@ function addFiltersFromUI(rawInput) {
   const results = [];
 
   for (const line of lines) {
-    const parts         = line.split(',').map(p => p.trim());
-    const email         = parts[0];
-    const labelName     = parts[1] || '';
-    const skipInbox     = parseBool(parts[2], false);
-    const markImportant = parseBool(parts[3], false);
+    const parsed = parseLine(line);
 
-    if (!email || !email.includes('@')) {
-      results.push({ email: line, label: '', status: 'error', message: 'Invalid email address' });
+    const criteriaKeys = [...CRITERIA_KEYS].filter(k => parsed[k] !== undefined);
+    const actionKeys   = [...ACTION_KEYS].filter(k => parsed[k] !== undefined);
+
+    const criteriaStr = criteriaKeys.map(k => `${k}:${parsed[k]}`).join(', ');
+    const actionsStr  = [
+      ...(parsed.label ? [`label:${Array.isArray(parsed.label) ? '[' + parsed.label.join(', ') + ']' : parsed.label}`] : []),
+      ...actionKeys.filter(k => k !== 'label').map(k => `${k}:${parsed[k]}`)
+    ].join(', ');
+
+    if (!parsed.from && !parsed.to) {
+      results.push({ criteriaStr: line, actionsStr: '', status: 'error', message: 'Must include from: or to:' });
       continue;
     }
-    if (!labelName) {
-      results.push({ email, label: '', status: 'error', message: 'Label name is required' });
+    if (!parsed.label || parsed.label.length === 0) {
+      results.push({ criteriaStr, actionsStr: '', status: 'error', message: 'label: is required' });
       continue;
     }
 
     try {
-      const { status, message } = applyFilter(email, labelName, skipInbox, markImportant, true);
-      results.push({ email, label: labelName, status, message });
+      const { status, message } = applyFilter(criteriaStr, actionsStr, parsed.backfill === true);
+      results.push({ criteriaStr, actionsStr, status, message });
     } catch (e) {
-      results.push({ email, label: labelName, status: 'error', message: e.message });
+      results.push({ criteriaStr, actionsStr, status: 'error', message: e.message });
     }
   }
 
@@ -60,7 +65,7 @@ function addFiltersFromUI(rawInput) {
 
 /**
  * Returns all filter rows from the sheet for display in the UI.
- * @returns {{ email: string, label: string, skipInbox: boolean, markImportant: boolean, lastSynced: string }[]}
+ * @returns {{ criteria: string, actions: string, backfill: boolean, lastSynced: string }[]}
  */
 function getFiltersForUI() {
   return readFiltersFromSheet();
@@ -69,42 +74,46 @@ function getFiltersForUI() {
 // ─── Core filter logic ────────────────────────────────────────────────────────
 
 /**
- * Creates a Gmail label and filter for one email address and writes the entry
- * to the sheet. Safe to call repeatedly — skips if an exact match already exists.
+ * Creates Gmail labels and a filter from criteria/actions strings, and writes
+ * the entry to the sheet. Safe to call repeatedly — skips if an exact match exists.
  *
- * @param {string}  email
- * @param {string}  labelName
- * @param {boolean} skipInbox
- * @param {boolean} markImportant
- * @param {boolean} [backfill=false] - If true, applies label to existing threads.
+ * @param {string}  criteriaStr - e.g. "from:boss@work.com, hasAttachment:true"
+ * @param {string}  actionsStr  - e.g. "label:[Work, Memes], skipInbox:true"
+ * @param {boolean} [backfill=false]
  * @returns {{ status: 'created'|'skipped'|'error', message: string }}
  */
-function applyFilter(email, labelName, skipInbox, markImportant, backfill = false) {
-  const labelId = getOrCreateLabel(labelName);
+function applyFilter(criteriaStr, actionsStr, backfill = false) {
+  const parsedCriteria = parseKVString(criteriaStr);
+  const parsedActions  = parseLine(actionsStr);
 
-  if (processExistingFilters(email, labelId, skipInbox, markImportant)) {
-    writeFilterToSheet(email, labelName, skipInbox, markImportant);
+  const labels   = parsedActions.label || [];
+  const labelIds = labels.map(name => getOrCreateLabel(name));
+
+  const criteria = buildCriteria(parsedCriteria);
+  const action   = buildAction(parsedActions, labelIds);
+
+  if (processExistingFilters(parsedCriteria.from, labelIds, parsedActions)) {
+    writeFilterToSheet(criteriaStr, actionsStr, backfill);
     return { status: 'skipped', message: 'Filter already exists' };
   }
 
-  const action = { addLabelIds: [labelId] };
-  if (skipInbox)      action.removeLabelIds = ['INBOX'];
-  if (markImportant)  action.addLabelIds.push('IMPORTANT');
-  Gmail.Users.Settings.Filters.create({ criteria: { from: email }, action }, userId);
-  cacheFilter(email, labelId, skipInbox, markImportant);
+  Gmail.Users.Settings.Filters.create({ criteria, action }, userId);
+  cacheFilter(parsedCriteria.from, labelIds, parsedActions);
 
   let backfilledCount = 0;
-  if (backfill) {
-    const gmailLabel = GmailApp.getUserLabelByName(labelName);
-    const threads    = gmailLabel ? GmailApp.search('from:' + email) : [];
+  if (backfill && parsedCriteria.from) {
+    const threads = GmailApp.search('from:' + parsedCriteria.from);
     if (threads.length > 0) {
-      gmailLabel.addToThreads(threads);
-      if (skipInbox) GmailApp.moveThreadsToArchive(threads);
+      for (const labelName of labels) {
+        const gmailLabel = GmailApp.getUserLabelByName(labelName);
+        if (gmailLabel) gmailLabel.addToThreads(threads);
+      }
+      if (parsedActions.skipInbox) GmailApp.moveThreadsToArchive(threads);
     }
     backfilledCount = threads.length;
   }
 
-  writeFilterToSheet(email, labelName, skipInbox, markImportant);
+  writeFilterToSheet(criteriaStr, actionsStr, backfill);
   return {
     status: 'created',
     message: backfill ? `Backfilled ${backfilledCount} thread(s)` : 'Filter created'
@@ -116,7 +125,6 @@ function applyFilter(email, labelName, skipInbox, markImportant, backfill = fals
 /**
  * Reads every row from the sheet and ensures a matching Gmail label and filter
  * exists for each one. Safe to run repeatedly.
- * Can be run directly from the Apps Script editor.
  */
 function syncFilters() {
   const rows = readFiltersFromSheet();
@@ -126,14 +134,14 @@ function syncFilters() {
     return;
   }
 
-  for (const { email, label, skipInbox, markImportant } of rows) {
+  for (const { criteria, actions, backfill } of rows) {
     try {
-      const { status, message } = applyFilter(email, label, skipInbox, markImportant);
+      const { status, message } = applyFilter(criteria, actions, backfill);
       const icon = status === 'created' ? '✅' : '⏭️';
-      console.log(`${icon} ${email} → "${label}" — ${message}`);
-      markSyncedInSheet(email);
+      console.log(`${icon} ${criteria} — ${message}`);
+      markSyncedInSheet(criteria);
     } catch (e) {
-      console.error(`❌ ${email}: ${e.message}`);
+      console.error(`❌ ${criteria}: ${e.message}`);
     }
   }
 }

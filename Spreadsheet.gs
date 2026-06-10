@@ -1,15 +1,14 @@
 // ─── Sheet constants ──────────────────────────────────────────────────────────
 
-const SHEET_NAME        = 'Filters';
-const SPREADSHEET_NAME  = 'Gmail Filter Manager';
+const SHEET_NAME       = 'Filters';
+const SPREADSHEET_NAME = 'Gmail Filter Manager';
 
-const COL_EMAIL          = 1;
-const COL_LABEL          = 2;
-const COL_SKIP_INBOX     = 3;
-const COL_MARK_IMPORTANT = 4;
-const COL_LAST_SYNCED    = 5;
-const HEADER_ROW         = ['Email', 'Label', 'Skip Inbox', 'Mark Important', 'Last Synced'];
-const DATA_START_ROW     = 2; // row 1 is the header
+const COL_CRITERIA   = 1;
+const COL_ACTIONS    = 2;
+const COL_BACKFILL   = 3;
+const COL_LAST_SYNCED = 4;
+const HEADER_ROW     = ['Criteria', 'Actions', 'Backfill', 'Last Synced'];
+const DATA_START_ROW = 2;
 
 // ─── Spreadsheet access ───────────────────────────────────────────────────────
 
@@ -70,20 +69,16 @@ function getOrCreateSheet() {
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
  */
 function formatSheet(sheet) {
-  // Header
   const headerRange = sheet.getRange(1, 1, 1, HEADER_ROW.length);
   headerRange.setValues([HEADER_ROW]);
   headerRange.setFontWeight('bold');
   headerRange.setBackground('#f3f3f3');
 
-  // Column widths
-  sheet.setColumnWidth(COL_EMAIL,          280);
-  sheet.setColumnWidth(COL_LABEL,          180);
-  sheet.setColumnWidth(COL_SKIP_INBOX,     100);
-  sheet.setColumnWidth(COL_MARK_IMPORTANT, 130);
-  sheet.setColumnWidth(COL_LAST_SYNCED,    160);
+  sheet.setColumnWidth(COL_CRITERIA,    400);
+  sheet.setColumnWidth(COL_ACTIONS,     300);
+  sheet.setColumnWidth(COL_BACKFILL,     80);
+  sheet.setColumnWidth(COL_LAST_SYNCED, 160);
 
-  // Freeze header row
   sheet.setFrozenRows(1);
 }
 
@@ -91,42 +86,39 @@ function formatSheet(sheet) {
 
 /**
  * Reads all filter rows from the sheet and returns them as an array of objects.
- * Skips blank rows and the header.
  *
- * @returns {{ email: string, label: string, skipInbox: boolean, markImportant: boolean, lastSynced: string }[]}
+ * @returns {{ criteria: string, actions: string, backfill: boolean, lastSynced: string }[]}
  */
 function readFiltersFromSheet() {
-  const sheet     = getOrCreateSheet();
-  const lastRow   = sheet.getLastRow();
+  const sheet   = getOrCreateSheet();
+  const lastRow = sheet.getLastRow();
   if (lastRow < DATA_START_ROW) return [];
 
   const numRows = lastRow - DATA_START_ROW + 1;
   const values  = sheet.getRange(DATA_START_ROW, 1, numRows, HEADER_ROW.length).getValues();
 
   return values
-    .filter(row => row[COL_EMAIL - 1] && String(row[COL_EMAIL - 1]).includes('@'))
+    .filter(row => String(row[COL_CRITERIA - 1]).trim().length > 0)
     .map(row => ({
-      email:         String(row[COL_EMAIL          - 1]).trim(),
-      label:         String(row[COL_LABEL          - 1]).trim(),
-      skipInbox:     row[COL_SKIP_INBOX     - 1] === true,
-      markImportant: row[COL_MARK_IMPORTANT - 1] === true,
-      lastSynced:    String(row[COL_LAST_SYNCED    - 1] || '').trim(),
+      criteria:   String(row[COL_CRITERIA   - 1]).trim(),
+      actions:    String(row[COL_ACTIONS    - 1]).trim(),
+      backfill:   row[COL_BACKFILL - 1] === true,
+      lastSynced: String(row[COL_LAST_SYNCED - 1] || '').trim(),
     }));
 }
 
 /**
  * Appends a new filter row to the sheet.
- * Does nothing if a row with the same email already exists.
+ * Does nothing if a row with the same criteria string already exists.
  *
- * @param {string}  email
- * @param {string}  labelName
- * @param {boolean} skipInbox
- * @param {boolean} markImportant
+ * @param {string}  criteriaStr
+ * @param {string}  actionsStr
+ * @param {boolean} backfill
  * @returns {boolean} True if a new row was written, false if it already existed.
  */
-function writeFilterToSheet(email, labelName, skipInbox, markImportant) {
-  if (filterExistsInSheet(email)) {
-    console.log(`  Sheet: "${email}" already exists — skipping`);
+function writeFilterToSheet(criteriaStr, actionsStr, backfill) {
+  if (filterExistsInSheet(criteriaStr)) {
+    console.log(`  Sheet: "${criteriaStr}" already exists — skipping`);
     return false;
   }
 
@@ -134,29 +126,28 @@ function writeFilterToSheet(email, labelName, skipInbox, markImportant) {
   const newRow   = sheet.getLastRow() + 1;
   const checkbox = SpreadsheetApp.newDataValidation().requireCheckbox().build();
 
-  sheet.getRange(newRow, COL_EMAIL).setValue(email);
-  sheet.getRange(newRow, COL_LABEL).setValue(labelName);
-  sheet.getRange(newRow, COL_SKIP_INBOX).setDataValidation(checkbox).setValue(skipInbox);
-  sheet.getRange(newRow, COL_MARK_IMPORTANT).setDataValidation(checkbox).setValue(markImportant);
+  sheet.getRange(newRow, COL_CRITERIA).setValue(criteriaStr);
+  sheet.getRange(newRow, COL_ACTIONS).setValue(actionsStr);
+  sheet.getRange(newRow, COL_BACKFILL).setDataValidation(checkbox).setValue(backfill);
   sheet.getRange(newRow, COL_LAST_SYNCED).setValue(new Date().toLocaleString());
 
-  console.log(`  Sheet: appended "${email}" → "${labelName}"`);
+  console.log(`  Sheet: appended "${criteriaStr}" → "${actionsStr}"`);
   return true;
 }
 
 /**
- * Updates the Last Synced timestamp for a given email row.
+ * Updates the Last Synced timestamp for a given criteria row.
  *
- * @param {string} email
+ * @param {string} criteriaStr
  */
-function markSyncedInSheet(email) {
+function markSyncedInSheet(criteriaStr) {
   const sheet   = getOrCreateSheet();
   const lastRow = sheet.getLastRow();
   if (lastRow < DATA_START_ROW) return;
 
-  const emailCol = sheet.getRange(DATA_START_ROW, COL_EMAIL, lastRow - DATA_START_ROW + 1, 1).getValues();
-  for (let i = 0; i < emailCol.length; i++) {
-    if (String(emailCol[i][0]).trim() === email) {
+  const criteriaCol = sheet.getRange(DATA_START_ROW, COL_CRITERIA, lastRow - DATA_START_ROW + 1, 1).getValues();
+  for (let i = 0; i < criteriaCol.length; i++) {
+    if (String(criteriaCol[i][0]).trim() === criteriaStr) {
       sheet.getRange(DATA_START_ROW + i, COL_LAST_SYNCED).setValue(new Date().toLocaleString());
       return;
     }
@@ -164,21 +155,21 @@ function markSyncedInSheet(email) {
 }
 
 /**
- * Returns true if a row with the given email address already exists in the sheet.
+ * Returns true if a row with the given criteria string already exists in the sheet.
  *
- * @param {string} email
+ * @param {string} criteriaStr
  * @returns {boolean}
  */
-function filterExistsInSheet(email) {
+function filterExistsInSheet(criteriaStr) {
   const sheet   = getOrCreateSheet();
   const lastRow = sheet.getLastRow();
   if (lastRow < DATA_START_ROW) return false;
 
-  const emails = sheet
-    .getRange(DATA_START_ROW, COL_EMAIL, lastRow - DATA_START_ROW + 1, 1)
+  const criteria = sheet
+    .getRange(DATA_START_ROW, COL_CRITERIA, lastRow - DATA_START_ROW + 1, 1)
     .getValues()
     .flat()
-    .map(e => String(e).trim().toLowerCase());
+    .map(c => String(c).trim().toLowerCase());
 
-  return emails.includes(email.toLowerCase());
+  return criteria.includes(criteriaStr.toLowerCase());
 }

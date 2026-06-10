@@ -64,7 +64,6 @@
 
     /* ── Main layout ── */
     main {
-      max-width: 780px;
       margin: 32px auto;
       padding: 0 24px;
     }
@@ -105,7 +104,7 @@
     /* ── Textarea ── */
     textarea {
       width: 100%;
-      min-height: 160px;
+      min-height: 245px;
       border: 1px solid #dadce0;
       border-radius: 6px;
       padding: 12px 14px;
@@ -280,6 +279,40 @@
     }
 
     .loading-state .spinner { display: inline-block; }
+
+    /* ── Table of Action and Criteria keys ── */
+
+    .scroll-panel {
+      height: 516.6px;
+      width: 100%;
+      border: 1px solid #ccc;
+      overflow: scroll;
+    }
+    
+    .scroll-panel table {
+      width: 100%;
+      border-collapse: collapse;
+      background-color: white;
+    }
+    
+    .scroll-panel th, .scroll-panel td {
+      border: 1px solid #ccc;
+      padding: 8px;
+    }
+
+    .scroll-panel code {
+      background: #f1f3f4;
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-size: 12px;
+      font-family: 'Roboto Mono', monospace; 
+    }
+    
+    .scroll-panel th {
+      background-color: #f8f9fa;
+      font-weight: 600;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -300,32 +333,148 @@
 </header>
 
 <main>
-
   <!-- ── Add Filters panel ── -->
   <div class="panel active" id="panel-add">
-    <div class="card">
-      <div class="card-title">Add Filters</div>
-      <p class="card-hint">
-        One entry per line. Label will be created if it doesn't exist.<br>
-        <code>email@example.com, Label</code> &nbsp;—&nbsp; skipInbox and markImportant default to false<br>
-        <code>email@example.com, Label, skipInbox, markImportant</code> &nbsp;—&nbsp; use <code>true</code> or <code>false</code>
-      </p>
-      <textarea id="input" placeholder="careers@company.com, Work, true, true&#10;support@service.com, Newsletters, true, false"></textarea>
-      <div class="validation-msg" id="validationMsg"></div>
-      <div class="actions">
-        <button class="btn-primary" id="runBtn" onclick="handleRun()">Apply Filters</button>
-        <button class="btn-ghost" onclick="clearInput()">Clear</button>
-        <div class="spinner" id="spinner"></div>
+    <div style="display: flex; gap: 20px; max-width: 1250px; margin: 0 auto;">
+      <div style="flex: 1;">
+        <div class="card">
+          <div class="card-title">Add Filters</div>
+          <p class="card-hint">
+            One entry per line. Labels are created if they don't exist.<br>
+            <code>email@example.com, Label, skipInbox, markImportant</code> &nbsp;—&nbsp; shorthand (all fields positional)<br>
+            <code>from:email@example.com, label:Label, skipInbox:true, markImportant:true</code> &nbsp;—&nbsp; full key:value format<br>
+            To include multiple labels: <code>label:[Label One, Lable Two, etc]</code>
+          </p>
+          <textarea id="input" placeholder="careers@company.com, Work, true, true&#10;from:alerts@bank.com, label:[Finance, Alerts], skipInbox:true, hasAttachment:true""></textarea>
+          <div class="validation-msg" id="validationMsg"></div>
+          <div class="actions">
+            <button class="btn-primary" id="runBtn" onclick="handleRun()">Apply Filters</button>
+            <button class="btn-ghost" onclick="clearInput()">Clear</button>
+            <div class="spinner" id="spinner"></div>
+          </div>
+          <div class="log" id="log">
+            <div class="log-header" id="logHeader">Results</div>
+            <div class="log-body" id="logRows"></div>
+          </div>
+        </div>
       </div>
-      <div class="log" id="log">
-        <div class="log-header" id="logHeader">Results</div>
-        <div class="log-body" id="logRows"></div>
+    
+      <div style="flex: 1;">
+        <div class="scroll-panel">
+          <table>
+            <tr>
+              <th>Key</th>
+              <th>Value</th>
+              <th>Description</th>
+            </tr>
+            <tr>
+              <td><code>from:</code></td>
+              <td><code>email@example.com</code></td>
+              <td>Filter by sender email address</td>
+            </tr>
+            <tr>
+              <td><code>to:</code></td>
+              <td><code>email@example.com</code></td>
+              <td>Filter by recipient email address</td>
+            </tr>
+            <tr>
+              <td><code>subject:</code></td>
+              <td>any text</td>
+              <td>Filter by email subject line</td>
+            </tr>
+            <tr>
+              <td><code>query:</code></td>
+              <td>any text or phrase</td>
+              <td>Filter by email content containing specific words/phrases</td>
+            </tr>
+            <tr>
+              <td><code>negatedQuery:</code></td>
+              <td>any text or phrase</td>
+              <td>Filter by email content NOT containing specific words/phrases</td>
+            </tr>
+            <tr>
+              <td><code>hasAttachment:</code></td>
+              <td><code>true</code> or <code>false</code></td>
+              <td>true to filter only emails with attachments</td>
+            </tr>
+            <tr>
+              <td><code>excludeChats:</code></td>
+              <td><code>true</code> or <code>false</code></td>
+              <td>true to exclude chat messages from filter</td>
+            </tr>
+            <tr>
+              <td><code>size:</code></td>
+              <td>any number of bytes (e.g. <code>1000000</code>)</td>
+              <td>Used with <code>sizeComparison:</code> to filter by attachment size</td>
+            </tr>
+            <tr>
+              <td><code>sizeComparison:</code></td>
+              <td><code>larger</code> or <code>smaller</code></td>
+              <td>Used with <code>size:</code> to filter by attachment size</td>
+            </tr>
+            <tr>
+              <td><code>label:</code></td>
+              <td>any label (to set multiple labels use the format <code>[label1, label2, etc]</code>)</td>
+              <td>Apply a specific label to matching emails</td>
+            </tr>
+            <tr>
+              <td><code>skipInbox:</code></td>
+              <td><code>true</code> or <code>false</code></td>
+              <td>Archive matching emails instead of keeping in inbox</td>
+            </tr>
+            <tr>
+              <td><code>markAsRead:</code></td>
+              <td><code>true</code> or <code>false</code></td>
+              <td>Automatically mark matching emails as read</td>
+            </tr>
+            <tr>
+              <td><code>star:</code></td>
+              <td><code>true</code> or <code>false</code></td>
+              <td>Star matching emails</td>
+            </tr>
+            <tr>
+              <td><code>markImportant:</code></td>
+              <td><code>true</code> or <code>false</code></td>
+              <td>Always mark matching emails as important</td>
+            </tr>
+            <tr>
+              <td><code>neverMarkImportant:</code></td>
+              <td><code>true</code> or <code>false</code></td>
+              <td>Prevent matching emails from being marked important</td>
+            </tr>
+            <tr>
+              <td><code>neverSpam:</code></td>
+              <td><code>true</code> or <code>false</code></td>
+              <td>Prevent matching emails from going to spam</td>
+            </tr>
+            <tr>
+              <td><code>forwardTo:</code></td>
+              <td><code>email@example.com</code></td>
+              <td>Forward matching emails to the provided email address</td>
+            </tr>
+            <tr>
+              <td><code>delete:</code></td>
+              <td><code>true</code> or <code>false</code></td>
+              <td>Automatically delete matching emails</td>
+            </tr>
+            <tr>
+              <td><code>category:</code></td>
+              <td><code>Promotions, Social, Updates, Forums, Primary</code></td>
+              <td>Categorize matching emails</td>
+            </tr>
+            <tr>
+              <td><code>backfill:</code></td>
+              <td><code>true</code> or <code>false</code></td>
+              <td>Apply filter to all matching conversations (App only! Not a filter setting)</td>
+            </tr>
+          </table>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- ── View Filters panel ── -->
-  <div class="panel" id="panel-view">
+  <div class="panel" id="panel-view" style="max-width: 780px; margin: 0 auto;">
     <div class="card">
       <div class="card-title">All Filters</div>
       <p class="card-hint">All filter entries currently stored in the sheet.</p>
@@ -360,15 +509,19 @@
 
     const lines = input.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//'));
     for (const line of lines) {
-      const parts = line.split(',').map(p => p.trim());
-      if (!parts[0].includes('@'))
-        { validationMsg.textContent = `Invalid email: "${parts[0]}"`; return; }
-      if (!parts[1])
-        { validationMsg.textContent = `Missing label for: "${parts[0]}"`; return; }
-      if (parts[2] && !['true','false',''].includes(parts[2].toLowerCase()))
-        { validationMsg.textContent = `skipInbox must be true or false (got "${parts[2]}")`; return; }
-      if (parts[3] && !['true','false',''].includes(parts[3].toLowerCase()))
-        { validationMsg.textContent = `markImportant must be true or false (got "${parts[3]}")`; return; }
+      const isKV = line.split(',').some(t => /^\s*\w+:/.test(t));
+      if (isKV) {
+        if (!/from\s*:|to\s*:/.test(line))
+          { validationMsg.textContent = `Missing from: or to: in "${line}"`; return; }
+        if (!/label\s*:/.test(line))
+          { validationMsg.textContent = `Missing label: in "${line}"`; return; }
+      } else {
+        const parts = line.split(',').map(p => p.trim());
+        if (!parts[0].includes('@'))
+          { validationMsg.textContent = `Invalid email: "${parts[0]}"`; return; }
+        if (!parts[1])
+          { validationMsg.textContent = `Missing label for: "${parts[0]}"`; return; }
+      }
     }
 
     setLoading(true);
@@ -422,8 +575,8 @@
       row.className = 'log-row';
       row.innerHTML = `
         <span class="badge ${badgeClass}">${r.status}</span>
-        <span class="log-email">${esc(r.email)}</span>
-        <span class="log-detail">${esc(r.label ? '→ ' + r.label : '')} ${esc(r.message || '')}</span>
+        <span class="log-email">${esc(r.criteriaStr)}</span>
+        <span class="log-detail">${esc(r.actionsStr ? '→ ' + r.actionsStr : '')} ${esc(r.message || '')}</span>
       `;
       logRows.appendChild(row);
     }
@@ -455,10 +608,8 @@
 
     const tableRows = rows.map(r => `
       <tr>
-        <td class="email">${esc(r.email)}</td>
-        <td>${esc(r.label)}</td>
-        <td><span class="pill ${r.skipInbox ? 'pill-yes' : 'pill-no'}">${r.skipInbox ? 'Yes' : 'No'}</span></td>
-        <td><span class="pill ${r.markImportant ? 'pill-yes' : 'pill-no'}">${r.markImportant ? 'Yes' : 'No'}</span></td>
+        <td class="email">${esc(r.criteria)}</td>
+        <td>${esc(r.actions)}</td>
         <td>${esc(r.lastSynced || '—')}</td>
       </tr>
     `).join('');
@@ -467,10 +618,8 @@
       <table>
         <thead>
           <tr>
-            <th>Email</th>
-            <th>Label</th>
-            <th>Skip Inbox</th>
-            <th>Mark Important</th>
+            <th>Criteria</th>
+            <th>Actions</th>
             <th>Last Synced</th>
           </tr>
         </thead>
