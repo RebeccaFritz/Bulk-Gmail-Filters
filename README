@@ -1,17 +1,21 @@
 # Gmail Filter Manager
 
-A Google Apps Script that creates and manages Gmail filters — applying labels, skipping the inbox, and marking emails as important. Managed through a web app UI, with filter data stored in a Google Sheet as the source of truth.
+A Google Apps Script web app for creating and managing Gmail filters in bulk. Filters are defined using a flexible key:value syntax that exposes the full Gmail filter API — match on sender, recipient, subject, keywords, attachment presence, message size, and more — then apply labels, archive, mark as read, star, forward, and other actions. All filter data is stored in a Google Sheet as the source of truth.
 
 ---
 
 ## Features
 
-- **Web app UI** — add filters from any browser without opening the Apps Script editor
-- **Sheet-based storage** — all filter entries live in a Google Sheet; add rows directly to the sheet to define filters without using the UI
+- **Web app UI** — add and view filters from any browser without opening the Apps Script editor
+- **Two input formats** — a quick positional shorthand for common cases, and a full key:value format for everything else
+- **Full Gmail filter criteria** — `from`, `to`, `subject`, `query`, `negatedQuery`, `hasAttachment`, `excludeChats`, `size`, `sizeComparison`
+- **Full Gmail filter actions** — `label`, `skipInbox`, `markImportant`, `markAsRead`, `star`, `neverMarkImportant`, `neverSpam`, `forwardTo`, `category`
+- **Multiple labels per filter** — assign more than one label using bracket syntax: `label:[Work, Receipts]`
 - **Auto-creates labels** — including nested labels like `Finance/Alerts`
 - **Skips duplicates** — if an identical filter already exists in Gmail, it won't create another
 - **Replaces outdated filters** — if a filter exists for the same sender but with different settings, deletes the old one and creates the updated one
-- **Backfill on demand** — filters added through the web UI apply the label to existing matching threads; filters added directly to the sheet do not backfill
+- **Backfill on demand** — filters added through the web UI can apply labels to existing matching threads; filters added directly to the sheet do not backfill
+- **Sheet-based storage** — add rows directly to the sheet to define filters without using the UI
 - **PropertiesService cache** — label IDs and filter criteria are cached locally so repeat syncs skip Gmail API calls for entries that haven't changed
 
 ---
@@ -21,7 +25,8 @@ A Google Apps Script that creates and manages Gmail filters — applying labels,
 ### 1. Create a new Apps Script project
 Go to [script.google.com](https://script.google.com) and create a new standalone project.
 
-### 2. Enable the Gmail API advanced service
+### 2. Enable the Gmail Advanced Service
+
 - In the left sidebar, click **Services** (`+`)
 - Find **Gmail API** and click **Add**
 
@@ -31,9 +36,10 @@ Delete the default `Code.gs` and create the following files, pasting in the cont
 | File | Purpose |
 |---|---|
 | `Main.gs` | Entry points: `doGet()` and `syncFilters()` |
-| `Helpers.gs` | Gmail label and filter logic; PropertiesService cache functions |
+| `Helpers.gs` | Parsing utilities, Gmail label/filter logic, PropertiesService cache |
 | `Spreadsheet.gs` | All Google Sheet read/write operations |
 | `Index.html` | The web app UI |
+| `Test.gs` | Unit tests for parsing functions |
 
 ### 4. Initialize the sheet
 Run `getOrCreateSheet()` once from the editor. This creates the "Gmail Filter Manager" spreadsheet in your Drive and sets up the Filters sheet with proper formatting.
@@ -45,7 +51,7 @@ Run `getOrCreateSheet()` once from the editor. This creates the "Gmail Filter Ma
 - Set **Who has access** to `Only myself`
 - Click **Deploy** and copy the URL
 
-Bookmark that URL — it's your permanent entry point. The spreadsheet runs in the background as storage; you don't need to open it directly.
+Bookmark that URL — it's your permanent entry point. 
 
 ### 6. Authorize the script
 On first run you'll be prompted to authorize the script to access Gmail and Drive. Follow the prompts.
@@ -56,102 +62,168 @@ On first run you'll be prompted to authorize the script to access Gmail and Driv
 
 ### Adding filters via the web app
 
-Open your bookmarked web app URL. On the **Add Filters** tab, enter one filter per line:
+Open your bookmarked web app URL. On the **Add Filters** tab, enter one filter per line. Two formats are supported:
 
-```html
-email@example.com, Label Name
-email@example.com, Label Name, skipInbox, markImportant
+#### Positional format (shorthand)
+
+```
+email@example.com, Label
+email@example.com, Label, skipInbox, markImportant
 ```
 
-- The label will be created in Gmail if it doesn't exist yet
-- Existing threads from that sender will be labeled and archived (if `skipInbox` is `true`)
+Fields are positional and comma-separated. `skipInbox` and `markImportant` default to `false` when omitted.
 
-| Field | Type | Description | Default | Required |
-|---|---|---|---|---|
-| `email@example.com` | string | The sender's email address | N/A | Yes |
-| `Label Name` | string | The label to apply, created automatically if it doesn't exist | N/A | Yes |
-| `skipInbox` | boolean | `true` to archive, `false` to keep in inbox | `false` | No |
-| `markImportant` | boolean | `true` to mark as important, `false` to leave as-is | `false` | No |
-
-**Note:** Fields are comma-separated. Omit optional boolean fields to use their defaults. For example:
-
-```html
-<!-- both booleans default to false -->
-dad@family.com, Social 
-
-<!-- — skipInbox is false, markImportant is true -->
-boss@work.com, Work, false, true 
 ```
+# label only — both flags default to false
+dad@family.com, Family
+
+# skip inbox, don't mark important
+newsletters@service.com, Newsletters, true, false
+
+# skip inbox and mark important
+boss@work.com, Work, true, true
+
+# multiple labels using bracket syntax
+boss@work.com, [Work, Priority], true, true
+```
+
+#### Key:value format
+
+For filters that go beyond `from` + label, use explicit `key:value` pairs:
+
+```
+from:boss@work.com, label:Work, skipInbox:true
+
+from:boss@work.com, label:[Work, Priority], skipInbox:true, markImportant:true
+
+subject:Invoice, label:Finance, markAsRead:true
+
+from:alerts@bank.com, hasAttachment:true, label:Receipts, star:true
+
+from:newsletter@service.com, label:Newsletters, skipInbox:true, neverMarkImportant:true
+
+from:boss@work.com, query:budget, label:Work, skipInbox:true
+```
+
+The format is auto-detected: any token containing `:` triggers key:value parsing. Both formats normalize `label` to an array internally, so `label:Work` and `label:[Work]` are equivalent.
+
+#### Supported criteria keys
+
+These control which emails the filter matches:
+
+| Key | Type | Description |
+|---|---|---|
+| `from` | string | Sender email address |
+| `to` | string | Recipient email address |
+| `subject` | string | Subject line contains |
+| `query` | string | Full Gmail search query |
+| `negatedQuery` | string | Exclude emails matching this query |
+| `hasAttachment` | boolean | Only match emails with attachments |
+| `excludeChats` | boolean | Exclude chat messages |
+| `size` | number | Message size in bytes |
+| `sizeComparison` | string | `larger` or `smaller` (used with `size`) |
+
+#### Supported action keys
+
+These control what happens to matched emails:
+
+| Key | Type | Description |
+|---|---|---|
+| `label` | string | Label(s) to apply; created if they don't exist |
+| `skipInbox` | boolean | Archive the email (remove from inbox) |
+| `markImportant` | boolean | Mark as important |
+| `markAsRead` | boolean | Mark as read |
+| `star` | boolean | Star the email |
+| `neverMarkImportant` | boolean | Never mark as important |
+| `neverSpam` | boolean | Never send to spam |
+| `forwardTo` | string | Forward to this email address |
+| `category` | string | Assign to a category tab (e.g. `promotions`) |
 
 ### Adding filters directly to the sheet
 
-Open the "Gmail Filter Manager" spreadsheet in Drive and add rows manually:
+Open the "Gmail Filter Manager" spreadsheet in Drive and add rows manually. The sheet has four columns:
 
-| Email | Label | Skip Inbox | Mark Important | Last Synced |
-|---|---|---|---|---|
-| alerts@service.com | Newsletters | ✓ | ☐ | |
+| Criteria | Actions | Backfill | Last Synced |
+|---|---|---|---|
+| `from:alerts@service.com` | `label:Newsletters, skipInbox:true` | ☐ | |
 
-Then run `syncFilters()` from the Apps Script editor. Filters added this way are **not backfilled** — the label will only apply to new incoming emails, not existing threads.
+Both columns use key:value format. Then run `syncFilters()` from the Apps Script editor. Filters added this way are **not backfilled** — the label will only apply to new incoming emails, not existing threads — unless you check the Backfill box before syncing.
 
 ### Viewing existing filters
 
-The **View Filters** tab in the web app shows all entries currently in the sheet, including their settings and last sync time.
+The **View Filters** tab in the web app shows all entries currently stored in the sheet.
 
 ### Syncing the sheet to Gmail
 
-`syncFilters()` reads every row in the sheet and ensures a matching Gmail label and filter exists for each one. Safe to run repeatedly — entries that are already in sync are skipped. Run this any time you add rows directly to the sheet.
+`syncFilters()` reads every row in the sheet and ensures a matching Gmail label and filter exists for each one. Safe to run repeatedly — entries already in sync are skipped.
+
+---
+
+## Testing
+
+`Test.gs` contains unit tests for the parsing layer. Tests run entirely within Apps Script — no external test runner needed.
+
+To run all tests: open the Apps Script editor, select `runAllTests` from the function dropdown, and click **Run**. Results appear in the Execution Log.
 
 ---
 
 ## Entry points
 
 ### `doGet()`
-Serves the web app UI. Called automatically when someone visits the deployment URL — you never run this directly.
+Serves the web app UI. Called automatically when someone visits the deployment URL.
 
 ### `syncFilters()`
-The only function you run manually from the Apps Script editor (after initial setup). Reads all rows from the sheet and applies any filters not yet in Gmail. Does not backfill existing emails.
+Run manually from the Apps Script editor. Reads all rows from the sheet and applies any filters not yet in Gmail. Does not backfill existing emails (unless the row's Backfill checkbox is checked).
 
 ---
 
 ## File structure
 
 ### `Main.gs`
-Contains the two entry points and the core filter logic:
+Entry points and core filter logic:
 - `doGet()` — serves `Index.html` as the web app
 - `syncFilters()` — syncs all sheet rows to Gmail
-- `addFiltersFromUI(rawInput)` — called by the web UI via `google.script.run`; parses input, creates filters, and backfills existing threads
+- `addFiltersFromUI(rawInput)` — called by the web UI; parses input, creates filters, optionally backfills existing threads
 - `getFiltersForUI()` — called by the web UI to populate the View Filters table
-- `applyFilter(email, labelName, skipInbox, markImportant, backfill)` — creates a Gmail label and filter for one address; shared by both `addFiltersFromUI` and `syncFilters`
+- `applyFilter(criteriaStr, actionsStr, backfill)` — creates Gmail labels and a filter from criteria/actions strings; shared by both `addFiltersFromUI` and `syncFilters`
 
 ### `Helpers.gs`
-Gmail API logic and the PropertiesService cache:
+Parsing utilities, Gmail API logic, and the PropertiesService cache:
+- `parseLine(str)` — detects format and routes to the appropriate parser
+- `parseKVString(str)` — parses a key:value string into an object
+- `parsePositionalString(str)` — parses a positional CSV line into a KV object
+- `splitOutsideBrackets(str)` — splits on commas while preserving bracket contents
+- `parseLabels(val)` — normalizes a label value to an array
+- `parsePrimitive(val)` — coerces strings to booleans or numbers
+- `buildCriteria(parsed)` — builds a Gmail API criteria object from a parsed KV object
+- `buildAction(parsed, labelIds)` — builds a Gmail API action object from a parsed KV object and resolved label IDs
 - `getOrCreateLabel(labelName)` — returns a label's ID, creating it if needed; cache-first
-- `processExistingFilters(from, labelId, skipInbox, markImportant)` — checks for existing Gmail filters; cache-first; keeps exact matches, deletes outdated ones
-- `isDesiredFilter(match, labelId, skipInbox, markImportant)` — compares a filter object against desired criteria
+- `processExistingFilters(from, labelIds, parsedActions)` — checks for existing Gmail filters; keeps exact matches, deletes outdated ones
+- `isDesiredFilter(match, labelIds, parsedActions)` — compares a filter object against desired criteria
 - `cacheFilter / getCachedFilter / evictFilterCache` — PropertiesService helpers for filter criteria
 - `cacheLabelId / getCachedLabelId` — PropertiesService helpers for label IDs
-- `parseBool(val, defaultValue)` — parses `"true"`/`"false"` strings as booleans
 
 ### `Spreadsheet.gs`
 All sheet access — no Gmail logic lives here:
 - `getOrCreateSpreadsheet()` — finds or creates the "Gmail Filter Manager" spreadsheet; caches its ID
 - `getOrCreateSheet()` — finds or creates the Filters sheet with header and formatting
 - `readFiltersFromSheet()` — returns all data rows as an array of objects
-- `writeFilterToSheet(email, labelName, skipInbox, markImportant)` — appends a new row with checkbox formatting; skips duplicates
-- `markSyncedInSheet(email)` — updates the Last Synced timestamp for a given row
-- `filterExistsInSheet(email)` — returns true if a row with that email already exists
+- `writeFilterToSheet(criteriaStr, actionsStr, backfill)` — appends a new row; skips duplicates
+- `markSyncedInSheet(criteriaStr)` — updates the Last Synced timestamp for a given row
+- `filterExistsInSheet(criteriaStr)` — returns true if a row with that criteria string already exists
 
 ### `Index.html`
 The web app UI. Two tabs:
 - **Add Filters** — textarea input with client-side validation, loading state, and a color-coded results log
 - **View Filters** — table of all entries from the sheet
 
+### `Test.gs`
+Unit tests for the parsing layer. Contains `assert`, `assertEqual`, and `assertThrows` helpers, individual test functions, and a `runAllTests()` runner. Run from the Apps Script editor — no deployment needed.
+
 ---
 
 ## Notes
 
-- The Gmail API returns filters under `response.filter` (singular) — this is an API quirk, not a typo.
-- Built-in Gmail label IDs (`"INBOX"`, `"IMPORTANT"`) are always uppercase.
 - Nested labels use `/` as a separator (e.g. `Job Search/In Progress`) and appear as a folder hierarchy in the Gmail sidebar.
 - `GmailApp.search()` returns a maximum of 500 threads. If you have more than 500 emails from one sender, the backfill will only label the first 500.
 - When you make code changes, redeploy via **Deploy → Manage deployments → Edit** and increment the version. The URL stays the same.

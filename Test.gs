@@ -1,15 +1,31 @@
 // ─── Assertion Helpers ────────────────────────────────────────────────────────
 
+/**
+ * Throws if condition is falsy.
+ * @param {boolean}  condition
+ * @param {string}   message - Failure description shown in the error.
+ */
 function assert(condition, message) {
   if (!condition) throw new Error('FAIL: ' + message);
 }
 
+/**
+ * Throws if actual and expected don't match by JSON deep-equality.
+ * @param {*}      actual
+ * @param {*}      expected
+ * @param {string} message - Failure description shown in the error.
+ */
 function assertEqual(actual, expected, message) {
   const a = JSON.stringify(actual);
   const e = JSON.stringify(expected);
   if (a !== e) throw new Error(`FAIL: ${message}\n  expected: ${e}\n  got:      ${a}`);
 }
 
+/**
+ * Throws if fn does NOT throw. Logs the caught error message on success.
+ * @param {() => void} fn      - Function expected to throw.
+ * @param {string}     message - Failure description if fn doesn't throw.
+ */
 function assertThrows(fn, message) {
   try {
     fn();
@@ -22,6 +38,7 @@ function assertThrows(fn, message) {
 
 // ─── parsePrimitive ───────────────────────────────────────────────────────────
 
+/** Verifies string-to-type coercion: "true" → true, "42" → 42, unknown strings pass through. */
 function test_parsePrimitive() {
   // Arrange
   const cases = [
@@ -43,6 +60,7 @@ function test_parsePrimitive() {
 
 // ─── parseLabels ─────────────────────────────────────────────────────────────
 
+/** Verifies label normalization: bare strings, bracket single/multi, nested labels, whitespace trimming. */
 function test_parseLabels() {
   // Arrange
   const cases = [
@@ -64,7 +82,7 @@ function test_parseLabels() {
 
 // ─── parsePositionalString ────────────────────────────────────────────────────
 
-// These should all run without an issue
+/** Verifies positional parsing for all valid field combinations including multi-label bracket syntax. */
 function test_parsePositionalString_happyPath() {
   // Arrange
   const cases = [
@@ -104,6 +122,7 @@ function test_parsePositionalString_happyPath() {
   }
 }
 
+/** Verifies that non-boolean values in boolean positions (skipInbox, markImportant) throw. */
 function test_parsePositionalString_invalidBooleans() {
   // Arrange
   const cases = [
@@ -126,6 +145,7 @@ function test_parsePositionalString_invalidBooleans() {
 
 // ─── parseLine ────────────────────────────────────────────────────────────────
 
+/** Verifies that positional input (no colons) routes to parsePositionalString. */
 function test_parseLine_positionalRouting() {
   // Arrange
   const input = 'test1@example.com, Work, true, false';
@@ -140,6 +160,7 @@ function test_parseLine_positionalRouting() {
   assertEqual(result.markImportant, false,               'markImportant');
 }
 
+/** Verifies that key:value input routes to parseKVString. */
 function test_parseLine_kvRouting() {
   // Arrange
   const input = 'from:test1@example.com, label:Work, skipInbox:true';
@@ -153,6 +174,7 @@ function test_parseLine_kvRouting() {
   assertEqual(result.skipInbox, true,                'skipInbox');
 }
 
+/** Verifies that bracket multi-label syntax is handled correctly in key:value format. */
 function test_parseLine_kvMultiLabel() {
   // Arrange
   const input = 'from:boss@work.com, label:[Work, Memes], skipInbox:true';
@@ -166,6 +188,7 @@ function test_parseLine_kvMultiLabel() {
   assertEqual(result.skipInbox, true,               'skipInbox');
 }
 
+/** Verifies that all supported criteria and action keys parse correctly in key:value format. */
 function test_parseLine_kvAllKeys() {
   // Arrange
   const cases = [
@@ -215,7 +238,7 @@ function test_parseLine_kvAllKeys() {
   }
 }
 
-// making sure that the parser accepts various kinds of farmatting
+/** Verifies that formatting variance and multi word strings are handled correctly. */
 function test_parseLine_ignoreFormatting() {
   // Arrange
   const cases = [
@@ -225,8 +248,8 @@ function test_parseLine_ignoreFormatting() {
       label:    'label (multi) with extra spaces',
     },
     {
-      input:    'from:boss@work.com, label[Work, skipInbox:true, skipInbox:true',
-      expected: { from: 'boss@work.com', label: ['Work', 'Memes'], skipInbox: true },
+      input:    'from:boss@work.com, label[Work], skipInbox:true, skipInbox:true',
+      expected: { from: 'boss@work.com', label: ['Work'], skipInbox: true },
       label:    'skipInbox:true appears twice --> ignore the second appearance',
     },
     {
@@ -245,7 +268,7 @@ function test_parseLine_ignoreFormatting() {
   }
 }
 
-// making sure that the parser properly handles errors
+/** Verifies that contradictory key assignments (e.g. skipInbox:true and skipInbox:false) throw. */
 function test_parseLine_errorHandling() {
   // Arrange
   const cases = [
@@ -265,6 +288,7 @@ function test_parseLine_errorHandling() {
 
 // ─── Runner ───────────────────────────────────────────────────────────────────
 
+/** Runs all test functions and logs a pass/fail summary to the Execution Log. */
 function runAllTests() {
   const tests = [
     test_parsePrimitive,
