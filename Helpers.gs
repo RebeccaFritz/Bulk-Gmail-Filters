@@ -128,7 +128,7 @@ function parseKVString(str) {
  * @returns {Object}
  */
 function parsePositionalString(str) {
-  const parts = str.split(',').map(p => p.trim());
+  const parts = splitOutsideBrackets(str); 
   const result = {};
 
   if (parts[0]) result.from            = parts[0];
