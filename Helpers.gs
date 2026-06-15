@@ -114,7 +114,27 @@ function parseKVString(str) {
     if (colon === -1) continue;
     const key = token.slice(0, colon).trim();
     const val = token.slice(colon + 1).trim();
-    result[key] = key === 'label' ? parseLabels(val) : parsePrimitive(val);
+
+    switch (key) {
+      case 'label':
+        result[key] = parseLabels(val);
+        break;
+      case 'skipInbox':
+      case 'hasAttachment':
+      case 'excludeChats':
+      case 'skipInbox':
+      case 'markAsRead':
+      case 'star':
+      case 'neverMarkImportant':
+      case 'markImportant':
+      case 'delete':
+        parsed_val = parsePrimitive(val)
+        if (typeof parsed_val !== 'boolean') throw new Error(`"${val}" is not a valid boolean for key "${key}"`);
+        result[key] = parsed_val;
+        break;
+      default:
+        result[key] = parsePrimitive(val);
+    }
   }
 
   return result;
@@ -133,8 +153,16 @@ function parsePositionalString(str) {
 
   if (parts[0]) result.from            = parts[0];
   if (parts[1]) result.label           = parseLabels(parts[1]);
-  if (parts[2]) result.skipInbox       = parsePrimitive(parts[2]);
-  if (parts[3]) result.markImportant   = parsePrimitive(parts[3]);
+  if (parts[2]) {
+    const skipInbox = parsePrimitive(parts[2]);
+    if (typeof skipInbox !== 'boolean') throw new Error(`"${parts[2]}" is not a valid boolean for skipInbox`);
+    result.skipInbox = skipInbox;
+  }
+  if (parts[3]) {
+    const markImportant = parsePrimitive(parts[3]);
+    if (typeof markImportant !== 'boolean') throw new Error(`"${parts[3]}" is not a valid boolean for markImportant`);
+    result.markImportant = markImportant;
+  }
 
   return result;
 }
