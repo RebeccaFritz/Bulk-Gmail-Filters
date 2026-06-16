@@ -32,7 +32,7 @@ function assertThrows(fn, message) {
     throw new Error(`FAIL: expected throw but got none — ${message}`);
   } catch (e) {
     if (e.message.startsWith('FAIL:')) throw e;
-    console.log(`  ✅ threw as expected: ${e.message}`);
+    console.log(`✅ threw as expected: ${e.message}`);
   }
 }
 
@@ -248,7 +248,7 @@ function test_parseLine_ignoreFormatting() {
       label:    'label (multi) with extra spaces',
     },
     {
-      input:    'from:boss@work.com, label[Work], skipInbox:true, skipInbox:true',
+      input:    'from:boss@work.com, label:[Work], skipInbox:true, skipInbox:true',
       expected: { from: 'boss@work.com', label: ['Work'], skipInbox: true },
       label:    'skipInbox:true appears twice --> ignore the second appearance',
     },
@@ -271,19 +271,15 @@ function test_parseLine_ignoreFormatting() {
 /** Verifies that contradictory key assignments (e.g. skipInbox:true and skipInbox:false) throw. */
 function test_parseLine_errorHandling() {
   // Arrange
-  const cases = [
-    {
-      // the same logic here should apply to all keys that take boolean values
-      fn:    () => parseLine('from:boss@work.com, skipInbox:true, skipInbox:false'),
-      label: 'skipInbox cannot be assigned both true and false', // “It is impossible for the same thing to belong and not to belong at the same time to the same thing and in the same respect” — Aristotle
-    },
-  ];
+  const input = {
+    // the same logic here should apply to all keys that take boolean values
+    fn:    () => parseLine('from:boss@work.com, skipInbox:true, skipInbox:false'),
+    label: 'skipInbox cannot be assigned both true and false', // “It is impossible for the same thing to belong and not to belong at the same time to the same thing and in the same respect” — Aristotle
+  };
 
   // Act + Assert
   // (assertThrows must act and assert together — the act is inside the lambda)
-  for (const c of cases) {
-    assertThrows(c.fn, c.label);
-  }
+  assertThrows(input.fn, input.label);
 }
 
 // ─── Runner ───────────────────────────────────────────────────────────────────
@@ -298,7 +294,7 @@ function runAllTests() {
     test_parseLine_positionalRouting,
     test_parseLine_kvRouting,
     test_parseLine_kvMultiLabel,
-    test_parseLine_ignoreFormatting
+    test_parseLine_ignoreFormatting,
   ];
 
   let passed = 0, failed = 0;
