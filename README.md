@@ -107,6 +107,18 @@ from:boss@work.com, query:budget, label:Work, skipInbox:true
 
 The format is auto-detected: any token containing `:` triggers key:value parsing. Both formats normalize `label` to an array internally, so `label:Work` and `label:[Work]` are equivalent.
 
+#### Deleting filters
+
+Prefix any filter line with `DEL` to delete it instead of creating it. Both formats are supported:
+
+```
+DEL email@example.com, Label, true, false
+
+DEL from:email@example.com, label:Label, skipInbox:true
+```
+
+The `DEL` line must include the same flags as the original filter for an exact match. If no matching filter is found, the entry is skipped.
+
 #### Supported criteria keys
 
 These control which emails the filter matches:
@@ -141,13 +153,13 @@ These control what happens to matched emails:
 
 ### Adding filters directly to the sheet
 
-Open the "Gmail Filter Manager" spreadsheet in Drive and add rows manually. The sheet has four columns:
+Open the "Gmail Filter Manager" spreadsheet in Drive and add rows manually. The sheet has three columns:
 
-| Criteria | Actions | Backfill | Last Synced |
-|---|---|---|---|
-| `from:alerts@service.com` | `label:Newsletters, skipInbox:true` | ☐ | |
+| Criteria | Actions | Last Synced |
+|---|---|---|
+| `from:alerts@service.com` | `label:Newsletters, skipInbox:true` | |
 
-Both columns use key:value format. Then run `syncFilters()` from the Apps Script editor. Filters added this way are **not backfilled** — the label will only apply to new incoming emails, not existing threads — unless you check the Backfill box before syncing.
+The first two columns use key:value format. Then run `syncFilters()` from the Apps Script editor. Filters added this way are **not backfilled** — the label will only apply to new incoming emails, not existing threads.
 
 ### Viewing existing filters
 
@@ -186,6 +198,7 @@ Entry points and core filter logic:
 - `addFiltersFromUI(rawInput)` — called by the web UI; parses input, creates filters, optionally backfills existing threads
 - `getFiltersForUI()` — called by the web UI to populate the View Filters table
 - `applyFilter(criteriaStr, actionsStr, backfill)` — creates Gmail labels and a filter from criteria/actions strings; shared by both `addFiltersFromUI` and `syncFilters`
+- `deleteFilter(parsed)` — deletes a Gmail filter matching the specified criteria and label/action combination; uses `isDesiredFilter` for exact matching
 
 ### `Helpers.gs`
 Parsing utilities, Gmail API logic, and the PropertiesService cache:
@@ -208,7 +221,7 @@ All sheet access — no Gmail logic lives here:
 - `getOrCreateSpreadsheet()` — finds or creates the "Gmail Filter Manager" spreadsheet; caches its ID
 - `getOrCreateSheet()` — finds or creates the Filters sheet with header and formatting
 - `readFiltersFromSheet()` — returns all data rows as an array of objects
-- `writeFilterToSheet(criteriaStr, actionsStr, backfill)` — appends a new row; skips duplicates
+- `writeFilterToSheet(criteriaStr, actionsStr)` — appends a new row; skips duplicates
 - `markSyncedInSheet(criteriaStr)` — updates the Last Synced timestamp for a given row
 - `filterExistsInSheet(criteriaStr)` — returns true if a row with that criteria string already exists
 
