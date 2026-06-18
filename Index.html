@@ -509,6 +509,7 @@
 
     const lines = input.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//'));
     for (const line of lines) {
+      if (/^DEL\s+/i.test(line)) continue;
       const isKV = line.split(',').some(t => /^\s*\w+:/.test(t));
       if (isKV) {
         if (!/from\s*:|to\s*:/.test(line))
@@ -570,6 +571,7 @@
     logRows.innerHTML = '';
     for (const r of results) {
       const badgeClass = r.status === 'created' ? 'badge-created'
+                       : r.status === 'deleted' ? 'badge-created'
                        : r.status === 'skipped' ? 'badge-skipped' : 'badge-error';
       const row = document.createElement('div');
       row.className = 'log-row';

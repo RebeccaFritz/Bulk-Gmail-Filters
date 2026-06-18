@@ -1,3 +1,33 @@
+// ─── Runner ───────────────────────────────────────────────────────────────────
+
+/** Runs all test functions and logs a pass/fail summary to the Execution Log. */
+function runAllTests() {
+  const tests = [
+    test_parsePrimitive,
+    test_parseLabels,
+    test_parsePositionalString_happyPath,
+    test_parsePositionalString_invalidBooleans,
+    test_parseLine_positionalRouting,
+    test_parseLine_kvRouting,
+    test_parseLine_kvMultiLabel,
+    test_parseLine_ignoreFormatting,
+    test_parseLine_delRouting,
+  ];
+
+  let passed = 0, failed = 0;
+  for (const t of tests) {
+    try {
+      t();
+      console.log(`✅ ${t.name}`);
+      passed++;
+    } catch (e) {
+      console.error(`❌ ${t.name}: ${e.message}`);
+      failed++;
+    }
+  }
+  console.log(`\n${passed} passed, ${failed} failed`);
+}
+
 // ─── Assertion Helpers ────────────────────────────────────────────────────────
 
 /**
@@ -282,32 +312,27 @@ function test_parseLine_errorHandling() {
   assertThrows(input.fn, input.label);
 }
 
-// ─── Runner ───────────────────────────────────────────────────────────────────
-
-/** Runs all test functions and logs a pass/fail summary to the Execution Log. */
-function runAllTests() {
-  const tests = [
-    test_parsePrimitive,
-    test_parseLabels,
-    test_parsePositionalString_happyPath,
-    test_parsePositionalString_invalidBooleans,
-    test_parseLine_positionalRouting,
-    test_parseLine_kvRouting,
-    test_parseLine_kvMultiLabel,
-    test_parseLine_ignoreFormatting,
+/** Verifies that DEL lines are parsing correctly */
+function test_parseLine_delRouting() {
+  // Arrange
+  const cases = [
+    {
+      input:    'DEL from:boss@work.com, label:Work, skipInbox:true',
+      expected: { from: 'boss@work.com', label: ['Work'], skipInbox: true, _delete: true },
+      label:    'DEL prefix stripped, _delete flag set (KV format)',
+    },
+    {
+      input:    'DEL boss@work.com, Work, true, false',
+      expected: { from: 'boss@work.com', label: ['Work'], skipInbox: true, markImportant: false, _delete: true },
+      label:    'DEL prefix stripped, _delete flag set (positional format)',
+    },
   ];
 
-  let passed = 0, failed = 0;
-  for (const t of tests) {
-    try {
-      t();
-      console.log(`✅ ${t.name}`);
-      passed++;
-    } catch (e) {
-      console.error(`❌ ${t.name}: ${e.message}`);
-      failed++;
-    }
-  }
-  console.log(`\n${passed} passed, ${failed} failed`);
-}
+  // Act
+  const results = cases.map(c => ({ ...c, actual: parseLine(c.input) }));
 
+  // Assert
+  for (const r of results) {
+    assertEqual(r.actual, r.expected, r.label);
+  }
+}

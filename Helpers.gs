@@ -175,8 +175,12 @@ function parsePositionalString(str) {
  * @returns {Object}
  */
 function parseLine(str) {
-  const isKV = str.split(',').some(t => /^\s*\w+:/.test(t));
-  return isKV ? parseKVString(str) : parsePositionalString(str);
+  const isDel = /^DEL\s+/i.test(str);
+  const body  = isDel ? str.replace(/^DEL\s+/i, '') : str;
+  const isKV  = body.split(',').some(t => /^\s*\w+:/.test(t));
+  const result = isKV ? parseKVString(body) : parsePositionalString(body);
+  if (isDel) result._delete = true;
+  return result;
 }
 
 /**

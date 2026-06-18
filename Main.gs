@@ -34,6 +34,16 @@ function addFiltersFromUI(rawInput) {
   for (const line of lines) {
     const parsed = parseLine(line);
 
+    if (parsed._delete) {
+      try {
+        const delResult = deleteFilter(parsed);
+        results.push({ criteriaStr: line, actionsStr: '', ...delResult });
+      } catch (e) {
+        results.push({ criteriaStr: line, actionsStr: '', status: 'error', message: e.message });
+      }
+      continue;
+    }
+
     const criteriaKeys = [...CRITERIA_KEYS].filter(k => parsed[k] !== undefined);
     const actionKeys   = [...ACTION_KEYS].filter(k => parsed[k] !== undefined);
 
@@ -118,6 +128,48 @@ function applyFilter(criteriaStr, actionsStr, backfill = false) {
     status: 'created',
     message: backfill ? `Backfilled ${backfilledCount} thread(s)` : 'Filter created'
   };
+}
+
+/**
+ * Deletes a Gmail filter matching the specified criteria and label/action combination.
+ * Uses isDesiredFilter for exact matching — the DEL line must include the same
+ * flags as the original filter (e.g. skipInbox, markImportant) to match correctly.
+ *
+ * @param {Object} parsed - Output of parseLine() for a DEL line, with _delete: true stripped.
+ * @returns {{ status: 'deleted'|'skipped'|'error', message: string }}
+ */
+function deleteFilter(parsed) {
+  if (!parsed.from && !parsed.to) {
+    return { status: 'error', message: 'DEL requires from: or to:' };
+  }
+
+  const key    = parsed.from ? 'from' : 'to';
+  const val    = parsed.from || parsed.to;
+  const labels = parsed.label || [];
+
+  const labelIds = labels.map(name => getOrCreateLabel(name));
+
+  const response        = Gmail.Users.Settings.Filters.list(userId);
+  const existingFilters = (response && response.filter) ? response.filter : [];
+  const matches         = existingFilters.filter(f => f.criteria && f.criteria[key] === val);
+
+  if (matches.length === 0) {
+    return { status: 'skipped', message: `No filter found for ${key}:${val}` };
+  }
+
+  const toDelete = matches.filter(f => isDesiredFilter(f, labelIds, parsed));
+
+  if (toDelete.length === 0) {
+    return { status: 'skipped', message: `No filter matched the specified labels/actions for ${key}:${val}` };
+  }
+
+  for (const match of toDelete) {
+    Gmail.Users.Settings.Filters.remove(userId, match.id);
+  }
+
+  evictFilterCache(val);
+
+  return { status: 'deleted', message: `Deleted ${toDelete.length} filter(s) for ${key}:${val}` };
 }
 
 // ─── Sync (sheet → Gmail) ─────────────────────────────────────────────────────
