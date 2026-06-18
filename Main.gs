@@ -113,7 +113,7 @@ function applyFilter(criteriaStr, actionsStr, backfill = false) {
     backfilledCount = threads.length;
   }
 
-  writeFilterToSheet(criteriaStr, actionsStr, backfill);
+  writeFilterToSheet(criteriaStr, actionsStr);
   return {
     status: 'created',
     message: backfill ? `Backfilled ${backfilledCount} thread(s)` : 'Filter created'
@@ -134,9 +134,9 @@ function syncFilters() {
     return;
   }
 
-  for (const { criteria, actions, backfill } of rows) {
+  for (const { criteria, actions } of rows) {
     try {
-      const { status, message } = applyFilter(criteria, actions, backfill);
+      const { status, message } = applyFilter(criteria, actions);
       const icon = status === 'created' ? '✅' : '⏭️';
       console.log(`${icon} ${criteria} — ${message}`);
       markSyncedInSheet(criteria);

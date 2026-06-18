@@ -5,9 +5,8 @@ const SPREADSHEET_NAME = 'Gmail Filter Manager';
 
 const COL_CRITERIA   = 1;
 const COL_ACTIONS    = 2;
-const COL_BACKFILL   = 3;
-const COL_LAST_SYNCED = 4;
-const HEADER_ROW     = ['Criteria', 'Actions', 'Backfill', 'Last Synced'];
+const COL_LAST_SYNCED = 3;
+const HEADER_ROW     = ['Criteria', 'Actions', 'Last Synced'];
 const DATA_START_ROW = 2;
 
 // ─── Spreadsheet access ───────────────────────────────────────────────────────
@@ -76,7 +75,6 @@ function formatSheet(sheet) {
 
   sheet.setColumnWidth(COL_CRITERIA,    400);
   sheet.setColumnWidth(COL_ACTIONS,     300);
-  sheet.setColumnWidth(COL_BACKFILL,     80);
   sheet.setColumnWidth(COL_LAST_SYNCED, 160);
 
   sheet.setFrozenRows(1);
@@ -102,7 +100,6 @@ function readFiltersFromSheet() {
     .map(row => ({
       criteria:   String(row[COL_CRITERIA   - 1]).trim(),
       actions:    String(row[COL_ACTIONS    - 1]).trim(),
-      backfill:   row[COL_BACKFILL - 1] === true,
       lastSynced: String(row[COL_LAST_SYNCED - 1] || '').trim(),
     }));
 }
@@ -128,7 +125,6 @@ function writeFilterToSheet(criteriaStr, actionsStr, backfill) {
 
   sheet.getRange(newRow, COL_CRITERIA).setValue(criteriaStr);
   sheet.getRange(newRow, COL_ACTIONS).setValue(actionsStr);
-  sheet.getRange(newRow, COL_BACKFILL).setDataValidation(checkbox).setValue(backfill);
   sheet.getRange(newRow, COL_LAST_SYNCED).setValue(new Date().toLocaleString());
 
   console.log(`  Sheet: appended "${criteriaStr}" → "${actionsStr}"`);
