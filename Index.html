@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gmail Filter Manager</title>
+
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -38,11 +39,39 @@
       color: #202124;
     }
 
+    /* ── Sync Error ── */
+
+    .sync-container {
+      display: flex;
+      flex: 1;
+      justify-content: right;
+    }
+
+    .sync-body {
+      display: none;
+      border-radius: 30px;
+      padding: 10px;
+    }
+
+    .sync-body.error {
+      background: #fce8e6;
+      color: #c5221f;
+    }
+
+    .sync-body.sucess {
+      background: #e6f4ea; 
+      color: #137333;
+    }
+
+    .sync-body.visible {
+      display: flex;
+      gap: 5px;
+    }
+
     /* ── Tabs ── */
     .tabs {
       display: flex;
       gap: 0;
-      margin-left: auto;
     }
 
     .tab {
@@ -326,6 +355,9 @@
     <rect x="6" y="9" width="16" height="11" rx="1" stroke="white" stroke-width="1.5" fill="none"/>
   </svg>
   <h1>Gmail Filter Manager</h1>
+  <div class="sync-container">
+    <div class="sync-body" id="sync-body"></div>
+  </div>
   <nav class="tabs">
     <div class="tab active" onclick="switchTab('add')">Add Filters</div>
     <div class="tab" onclick="switchTab('view')">View Filters</div>
@@ -585,6 +617,25 @@
     document.getElementById('log').classList.add('visible');
   }
 
+  // ── Sync Filters ──────────────────────────────────────────────────────────
+  function sync() {
+    google.script.run
+      .withSuccessHandler(res => {
+        document.getElementById('sync-body').classList.add('visible');
+        document.getElementById('sync-body').classList.remove('error');
+        document.getElementById('sync-body').classList.add('sucess');
+        document.getElementById('sync-body').innerHTML = sync + "Synced with Gmail filters";
+      })
+      .withFailureHandler(err => {
+        document.getElementById('sync-body').classList.add('visible');
+        document.getElementById('sync-body').classList.add('error');
+        document.getElementById('sync-body').innerHTML = syncError + "Failed to sync with Gmail filters";
+      })
+      .syncFilters();
+  }
+
+  sync(); 
+
   // ── View Filters ──────────────────────────────────────────────────────────
   let filtersLoaded = false;
 
@@ -635,6 +686,20 @@
     return String(str || '')
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+
+  // ─── Assets (sourced from tabler.io) ────────────────────────────────────
+  var syncError = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-refresh-alert">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                    <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" />
+                    <path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" />
+                    <path d="M12 9l0 3" /><path d="M12 15l.01 0" />
+                  </svg>`;
+                  
+  var sync = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-refresh">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                    <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" />
+                    <path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" />
+                  </svg>`;
 </script>
 </body>
 </html>
